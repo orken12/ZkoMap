@@ -111,7 +111,14 @@ document.addEventListener('mousemove', e => {
       (e.target.value === "satellite" ? satelliteLayer : osmLayer).addTo(map);
     });
 
-    let points = JSON.parse(localStorage.getItem('savedPoints') || '[]');
+    const STORAGE_KEY = 'savedPoints';
+    let points = [];
+    try {
+      const savedPoints = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+      points = Array.isArray(savedPoints) ? savedPoints.map(normalizePoint) : [];
+    } catch {
+      points = [];
+    }
     let selectMode = false, currentIndex = -1, editIndex = -1;
     const listDiv = document.getElementById('pointsList');
     const searchInput = document.getElementById('searchPoints');
@@ -155,7 +162,7 @@ document.addEventListener('mousemove', e => {
       formTitle.textContent = "Добавить точку";
     }
 
-    function saveToLocalStorage() { localStorage.setItem('savedPoints', JSON.stringify(points.map(normalizePoint))); }
+    function saveToLocalStorage() { localStorage.setItem(STORAGE_KEY, JSON.stringify(points.map(normalizePoint))); }
 
 function refreshList(filter = '') {
   listDiv.innerHTML = '';
@@ -281,11 +288,13 @@ function flyToPoint(realIndex) {
         const text = await file.text();
         const data = JSON.parse(text);
         if (!Array.isArray(data)) return alert("Неверный формат JSON!");
+        clearForm();
         points.forEach(p => p.marker && map.removeLayer(p.marker));
         points = [];
         data.forEach(p => addOrEditPoint(p));
         saveToLocalStorage();
         refreshList();
+        e.target.value = '';
         alert("Импорт JSON завершён!");
       } catch {
         alert("Ошибка при чтении JSON!");
@@ -296,6 +305,7 @@ function flyToPoint(realIndex) {
       const file = e.target.files[0];
       if (!file) return;
       try {
+        clearForm();
         const zip = await JSZip.loadAsync(file);
         const kmlFile = Object.keys(zip.files).find(name => name.endsWith('.kml'));
         if (!kmlFile) return alert("В KMZ нет KML-файла!");
@@ -313,6 +323,7 @@ function flyToPoint(realIndex) {
         }
         saveToLocalStorage();
         refreshList();
+        e.target.value = '';
         alert("Импорт KMZ завершён!");
       } catch {
         alert("Ошибка при чтении KMZ!");
