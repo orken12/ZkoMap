@@ -41,6 +41,9 @@
     <input type="file" id="importJSON" accept=".json" />
     <label style="font-size:13px;color:#333;">Импортировать из KMZ:</label>
     <input type="file" id="importKmz" accept=".kmz" />
+    <label style="font-size:13px;color:#333;">GitHub token (для синхронизации между устройствами):</label>
+    <input type="password" id="githubToken" placeholder="ghp_..." />
+    <button id="syncGithub" style="background:#28a745;">Сохранить точки в GitHub Pages</button>
     <label style="font-size:13px;color:#333;">Показывать только точки с описанием:</label>
 <label class="switch">
   <input type="checkbox" id="descFilter">
@@ -112,6 +115,8 @@ document.addEventListener('mousemove', e => {
     });
 
     const STORAGE_KEY = 'savedPoints';
+    const GITHUB_TOKEN_KEY = 'githubToken';
+    const REMOTE_POINTS_URL = './points.json';
     let points = [];
     try {
       const savedPoints = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
@@ -163,6 +168,87 @@ document.addEventListener('mousemove', e => {
     }
 
     function saveToLocalStorage() { localStorage.setItem(STORAGE_KEY, JSON.stringify(points.map(normalizePoint))); }
+
+    function encodeBase64Utf8(text) {
+      return btoa(unescape(encodeURIComponent(text)));
+    }
+
+    function clearAllMarkers() {
+      points.forEach(p => p.marker && map.removeLayer(p.marker));
+      points = [];
+    }
+
+    function setPoints(newPoints) {
+      clearForm();
+      clearAllMarkers();
+      newPoints.forEach(p => addOrEditPoint(p));
+      saveToLocalStorage();
+      refreshList(searchInput.value.trim());
+    }
+
+    async function loadPointsFromRemote() {
+      try {
+        const response = await fetch(`${REMOTE_POINTS_URL}?t=${Date.now()}`, { cache: 'no-store' });
+        if (!response.ok) return false;
+        const data = await response.json();
+        if (!Array.isArray(data)) return false;
+        setPoints(data);
+        return true;
+      } catch {
+        return false;
+      }
+    }
+
+    async function savePointsToGitHub() {
+      const tokenInput = document.getElementById('githubToken');
+      const token = tokenInput.value.trim();
+      if (!token) return alert('Вставь GitHub token (repo scope).');
+
+      const [owner, repo] = location.pathname.split('/').filter(Boolean);
+      if (!owner || !repo) {
+        return alert('Не удалось определить owner/repo из URL GitHub Pages.');
+      }
+
+      const path = 'points.json';
+      let sha;
+
+      const getResp = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/${path}`, {
+        headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json' }
+      });
+
+      if (getResp.ok) {
+        const existing = await getResp.json();
+        sha = existing.sha;
+      } else if (getResp.status !== 404) {
+        return alert('Ошибка чтения файла points.json из GitHub.');
+      }
+
+      const content = JSON.stringify(points.map(normalizePoint), null, 2);
+      const payload = {
+        message: 'Update points.json from map editor',
+        content: encodeBase64Utf8(content),
+        sha
+      };
+
+      const putResp = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/${path}`, {
+        method: 'PUT',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: 'application/vnd.github+json',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
+      });
+
+      if (!putResp.ok) {
+        const errText = await putResp.text();
+        console.error(errText);
+        return alert('Не удалось сохранить points.json в GitHub. Проверь token и права.');
+      }
+
+      localStorage.setItem(GITHUB_TOKEN_KEY, token);
+      alert('Сохранено в GitHub. На другом устройстве точки появятся после обновления страницы.');
+    }
 
 function refreshList(filter = '') {
   listDiv.innerHTML = '';
@@ -267,8 +353,7 @@ function flyToPoint(realIndex) {
 
     document.getElementById('deleteAll').onclick = () => {
       if (!confirm("Удалить все точки?")) return;
-      points.forEach(p => p.marker && map.removeLayer(p.marker));
-      points = [];
+      clearAllMarkers();
       saveToLocalStorage();
       refreshList();
     };
@@ -288,12 +373,7 @@ function flyToPoint(realIndex) {
         const text = await file.text();
         const data = JSON.parse(text);
         if (!Array.isArray(data)) return alert("Неверный формат JSON!");
-        clearForm();
-        points.forEach(p => p.marker && map.removeLayer(p.marker));
-        points = [];
-        data.forEach(p => addOrEditPoint(p));
-        saveToLocalStorage();
-        refreshList();
+        setPoints(data);
         e.target.value = '';
         alert("Импорт JSON завершён!");
       } catch {
@@ -322,7 +402,7 @@ function flyToPoint(realIndex) {
           addOrEditPoint({ name, desc, lat, lng });
         }
         saveToLocalStorage();
-        refreshList();
+        refreshList(searchInput.value.trim());
         e.target.value = '';
         alert("Импорт KMZ завершён!");
       } catch {
@@ -330,9 +410,19 @@ function flyToPoint(realIndex) {
       }
     };
 
+    document.getElementById('syncGithub').onclick = savePointsToGitHub;
+    const tokenInput = document.getElementById('githubToken');
+    tokenInput.value = localStorage.getItem(GITHUB_TOKEN_KEY) || '';
+
     searchInput.oninput = e => refreshList(e.target.value.trim());
-    points.forEach((p, i) => addMarker(p, i));
-    refreshList();
+
+    (async () => {
+      const loadedRemote = await loadPointsFromRemote();
+      if (!loadedRemote) {
+        points.forEach((p, i) => addMarker(p, i));
+        refreshList();
+      }
+    })();
   </script>
 </body>
 </html>
