@@ -41,9 +41,12 @@
     <input type="file" id="importJSON" accept=".json" />
     <label style="font-size:13px;color:#333;">Импортировать из KMZ:</label>
     <input type="file" id="importKmz" accept=".kmz" />
-    <label style="font-size:13px;color:#333;">GitHub token (для синхронизации между устройствами):</label>
-    <input type="password" id="githubToken" placeholder="ghp_..." />
-    <button id="syncGithub" style="background:#28a745;">Сохранить точки в GitHub Pages</button>
+    <label style="font-size:13px;color:#333;">Supabase URL:</label>
+    <input type="text" id="supabaseUrl" placeholder="https://PROJECT.supabase.co" />
+    <label style="font-size:13px;color:#333;">Supabase Anon Key:</label>
+    <input type="password" id="supabaseAnonKey" placeholder="eyJ..." />
+    <button id="loadSupabase" style="background:#6f42c1;">Загрузить точки из Supabase</button>
+    <button id="saveSupabase" style="background:#28a745;">Сохранить точки в Supabase</button>
     <label style="font-size:13px;color:#333;">Показывать только точки с описанием:</label>
 <label class="switch">
   <input type="checkbox" id="descFilter">
@@ -115,8 +118,9 @@ document.addEventListener('mousemove', e => {
     });
 
     const STORAGE_KEY = 'savedPoints';
-    const GITHUB_TOKEN_KEY = 'githubToken';
-    const REMOTE_POINTS_URL = './points.json';
+    const SUPABASE_URL_KEY = 'supabaseUrl';
+    const SUPABASE_ANON_KEY = 'supabaseAnonKey';
+    const DEFAULT_SUPABASE_URL = 'https://diniabtxchgtbcfldwib.supabase.co';
     let points = [];
     try {
       const savedPoints = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
@@ -169,8 +173,18 @@ document.addEventListener('mousemove', e => {
 
     function saveToLocalStorage() { localStorage.setItem(STORAGE_KEY, JSON.stringify(points.map(normalizePoint))); }
 
-    function encodeBase64Utf8(text) {
-      return btoa(unescape(encodeURIComponent(text)));
+    function getSupabaseConfig() {
+      const url = document.getElementById('supabaseUrl').value.trim().replace(/\/$/, '');
+      const anonKey = document.getElementById('supabaseAnonKey').value.trim();
+      return { url, anonKey };
+    }
+
+    function getSupabaseHeaders(anonKey) {
+      return {
+        apikey: anonKey,
+        Authorization: `Bearer ${anonKey}`,
+        'Content-Type': 'application/json'
+      };
     }
 
     function clearAllMarkers() {
@@ -186,68 +200,103 @@ document.addEventListener('mousemove', e => {
       refreshList(searchInput.value.trim());
     }
 
-    async function loadPointsFromRemote() {
+    async function loadPointsFromSupabase(showSuccess = false) {
+      const { url, anonKey } = getSupabaseConfig();
+      if (!url || !anonKey) {
+        if (showSuccess) alert('Введи Supabase URL и Anon Key.');
+        return false;
+      }
+
       try {
-        const response = await fetch(`${REMOTE_POINTS_URL}?t=${Date.now()}`, { cache: 'no-store' });
-        if (!response.ok) return false;
-        const data = await response.json();
-        if (!Array.isArray(data)) return false;
-        setPoints(data);
+        const response = await fetch(`${url}/rest/v1/markers?select=id,lat,lng,content&order=id.asc`, {
+          headers: getSupabaseHeaders(anonKey)
+        });
+
+        if (!response.ok) {
+          const err = await response.text();
+          console.error(err);
+          alert('Ошибка загрузки из Supabase. Проверь URL/ключ и RLS policy.');
+          return false;
+        }
+
+        const rows = await response.json();
+        const nextPoints = rows.map(row => {
+          let parsed = {};
+          try { parsed = JSON.parse(row.content || '{}'); } catch { parsed = { desc: row.content || '' }; }
+          return normalizePoint({
+            lat: row.lat,
+            lng: row.lng,
+            name: parsed.name || 'Без названия',
+            desc: parsed.desc || '',
+            photo: parsed.photo || null
+          });
+        });
+
+        setPoints(nextPoints);
+        localStorage.setItem(SUPABASE_URL_KEY, url);
+        localStorage.setItem(SUPABASE_ANON_KEY, anonKey);
+        if (showSuccess) alert('Точки загружены из Supabase.');
         return true;
-      } catch {
+      } catch (err) {
+        console.error(err);
+        alert('Ошибка соединения с Supabase.');
         return false;
       }
     }
 
-    async function savePointsToGitHub() {
-      const tokenInput = document.getElementById('githubToken');
-      const token = tokenInput.value.trim();
-      if (!token) return alert('Вставь GitHub token (repo scope).');
+    async function savePointsToSupabase() {
+      const { url, anonKey } = getSupabaseConfig();
+      if (!url || !anonKey) return alert('Введи Supabase URL и Anon Key.');
 
-      const [owner, repo] = location.pathname.split('/').filter(Boolean);
-      if (!owner || !repo) {
-        return alert('Не удалось определить owner/repo из URL GitHub Pages.');
+      try {
+        const deleteResp = await fetch(`${url}/rest/v1/markers?id=gt.0`, {
+          method: 'DELETE',
+          headers: {
+            ...getSupabaseHeaders(anonKey),
+            Prefer: 'return=minimal'
+          }
+        });
+
+        if (!deleteResp.ok) {
+          const err = await deleteResp.text();
+          console.error(err);
+          return alert('Не удалось очистить markers в Supabase. Проверь права на DELETE.');
+        }
+
+        const payload = points.map(p => ({
+          lat: Number(p.lat),
+          lng: Number(p.lng),
+          content: JSON.stringify({
+            name: p.name || 'Без названия',
+            desc: p.desc || '',
+            photo: p.photo || null
+          })
+        }));
+
+        if (payload.length > 0) {
+          const insertResp = await fetch(`${url}/rest/v1/markers`, {
+            method: 'POST',
+            headers: {
+              ...getSupabaseHeaders(anonKey),
+              Prefer: 'return=minimal'
+            },
+            body: JSON.stringify(payload)
+          });
+
+          if (!insertResp.ok) {
+            const err = await insertResp.text();
+            console.error(err);
+            return alert('Не удалось сохранить точки в Supabase. Проверь INSERT policy.');
+          }
+        }
+
+        localStorage.setItem(SUPABASE_URL_KEY, url);
+        localStorage.setItem(SUPABASE_ANON_KEY, anonKey);
+        alert('Точки сохранены в Supabase. На другом устройстве нажми "Загрузить точки из Supabase".');
+      } catch (err) {
+        console.error(err);
+        alert('Ошибка соединения с Supabase.');
       }
-
-      const path = 'points.json';
-      let sha;
-
-      const getResp = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/${path}`, {
-        headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json' }
-      });
-
-      if (getResp.ok) {
-        const existing = await getResp.json();
-        sha = existing.sha;
-      } else if (getResp.status !== 404) {
-        return alert('Ошибка чтения файла points.json из GitHub.');
-      }
-
-      const content = JSON.stringify(points.map(normalizePoint), null, 2);
-      const payload = {
-        message: 'Update points.json from map editor',
-        content: encodeBase64Utf8(content),
-        sha
-      };
-
-      const putResp = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/${path}`, {
-        method: 'PUT',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          Accept: 'application/vnd.github+json',
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(payload)
-      });
-
-      if (!putResp.ok) {
-        const errText = await putResp.text();
-        console.error(errText);
-        return alert('Не удалось сохранить points.json в GitHub. Проверь token и права.');
-      }
-
-      localStorage.setItem(GITHUB_TOKEN_KEY, token);
-      alert('Сохранено в GitHub. На другом устройстве точки появятся после обновления страницы.');
     }
 
 function refreshList(filter = '') {
@@ -410,15 +459,19 @@ function flyToPoint(realIndex) {
       }
     };
 
-    document.getElementById('syncGithub').onclick = savePointsToGitHub;
-    const tokenInput = document.getElementById('githubToken');
-    tokenInput.value = localStorage.getItem(GITHUB_TOKEN_KEY) || '';
+    const supabaseUrlInput = document.getElementById('supabaseUrl');
+    const supabaseAnonKeyInput = document.getElementById('supabaseAnonKey');
+    supabaseUrlInput.value = localStorage.getItem(SUPABASE_URL_KEY) || DEFAULT_SUPABASE_URL;
+    supabaseAnonKeyInput.value = localStorage.getItem(SUPABASE_ANON_KEY) || '';
+
+    document.getElementById('loadSupabase').onclick = () => loadPointsFromSupabase(true);
+    document.getElementById('saveSupabase').onclick = savePointsToSupabase;
 
     searchInput.oninput = e => refreshList(e.target.value.trim());
 
     (async () => {
-      const loadedRemote = await loadPointsFromRemote();
-      if (!loadedRemote) {
+      const loaded = await loadPointsFromSupabase(false);
+      if (!loaded) {
         points.forEach((p, i) => addMarker(p, i));
         refreshList();
       }
