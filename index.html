@@ -43,8 +43,9 @@
     <input type="file" id="importKmz" accept=".kmz" />
     <label style="font-size:13px;color:#333;">Supabase URL:</label>
     <input type="text" id="supabaseUrl" placeholder="https://PROJECT.supabase.co" />
-    <label style="font-size:13px;color:#333;">Supabase Anon Key:</label>
-    <input type="password" id="supabaseAnonKey" placeholder="eyJ..." />
+    <label style="font-size:13px;color:#333;">Supabase ключ (publishable/anon):</label>
+    <input type="password" id="supabaseAnonKey" placeholder="sb_publishable_..." />
+    <small style="display:block;color:#666;margin-bottom:8px;">Используется publishable ключ. Secret key в браузер вставлять не нужно.</small>
     <button id="loadSupabase" style="background:#6f42c1;">Загрузить точки из Supabase</button>
     <button id="saveSupabase" style="background:#28a745;">Сохранить точки в Supabase</button>
     <label style="font-size:13px;color:#333;">Показывать только точки с описанием:</label>
@@ -121,6 +122,7 @@ document.addEventListener('mousemove', e => {
     const SUPABASE_URL_KEY = 'supabaseUrl';
     const SUPABASE_ANON_KEY = 'supabaseAnonKey';
     const DEFAULT_SUPABASE_URL = 'https://diniabtxchgtbcfldwib.supabase.co';
+    const DEFAULT_SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_y55xuoAJAE5oEClmSPEQCA_Gjo7hFUi';
     let points = [];
     try {
       const savedPoints = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
@@ -462,7 +464,7 @@ function flyToPoint(realIndex) {
     const supabaseUrlInput = document.getElementById('supabaseUrl');
     const supabaseAnonKeyInput = document.getElementById('supabaseAnonKey');
     supabaseUrlInput.value = localStorage.getItem(SUPABASE_URL_KEY) || DEFAULT_SUPABASE_URL;
-    supabaseAnonKeyInput.value = localStorage.getItem(SUPABASE_ANON_KEY) || '';
+    supabaseAnonKeyInput.value = localStorage.getItem(SUPABASE_ANON_KEY) || DEFAULT_SUPABASE_PUBLISHABLE_KEY;
 
     document.getElementById('loadSupabase').onclick = () => loadPointsFromSupabase(true);
     document.getElementById('saveSupabase').onclick = savePointsToSupabase;
