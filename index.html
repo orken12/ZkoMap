@@ -63,6 +63,7 @@ input:checked + .slider { background-color: #007bff; }
 input:checked + .slider:before { transform: translateX(22px); }
 </style>
     <input type="text" id="searchPoints" placeholder="Поиск по точкам..." style="margin-top:10px;padding:6px;border-radius:6px;border:1px solid #ccc;font-size:14px;"/>
+    <div id="syncStatus" style="font-size:12px;color:#555;margin-bottom:8px;">Синхронизация: подготовка...</div>
     <div id="pointsList"></div>
   </div>
   <button id="toggleArrow">&lt;</button>
@@ -73,37 +74,53 @@ input:checked + .slider:before { transform: translateX(22px); }
   </div>
 
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script>
+    const SUPABASE_URL = "https://YOUR-PROJECT-ID.supabase.co";
+    const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_y55xuoAJAE5oEClmSPEQCA_Gjo7hFUi";
+
     const osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png');
     const satelliteLayer = L.tileLayer('https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}');
     const map = L.map('map', { zoomControl: false, attributionControl: false, layers: [osmLayer] }).setView([50.9, 52.0], 7);
     L.control.zoom({ position: 'bottomright' }).addTo(map);
 
+    const panel = document.getElementById('panel');
+    const arrow = document.getElementById('toggleArrow');
+    const listDiv = document.getElementById('pointsList');
+    const searchInput = document.getElementById('searchPoints');
+    const addBtn = document.getElementById('addPoint');
+    const descFilter = document.getElementById('descFilter');
+    const formTitle = document.getElementById('formTitle');
+    const syncStatus = document.getElementById('syncStatus');
 
-const panel = document.getElementById('panel');
-const arrow = document.getElementById('toggleArrow');
+    const hasSupabaseConfig = SUPABASE_URL.includes('supabase.co') && !SUPABASE_URL.includes('YOUR-PROJECT-ID');
+    const supabase = hasSupabaseConfig ? window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY) : null;
 
-function togglePanel() {
-  const hidden = panel.classList.toggle('hidden');
-  arrow.textContent = hidden ? '>' : '<';
-  arrow.style.left = hidden ? '0px' : '280px';
-  arrow.style.opacity = hidden ? '0' : '1';
-}
+    let points = JSON.parse(localStorage.getItem('savedPoints') || '[]');
+    let selectMode = false, currentIndex = -1, editIndex = -1;
 
+    function setSyncStatus(message, color = '#555') {
+      syncStatus.textContent = `Синхронизация: ${message}`;
+      syncStatus.style.color = color;
+    }
 
-arrow.addEventListener('click', togglePanel);
-arrow.addEventListener('touchstart', e => { e.preventDefault(); togglePanel(); });
+    function togglePanel() {
+      const hidden = panel.classList.toggle('hidden');
+      arrow.textContent = hidden ? '>' : '<';
+      arrow.style.left = hidden ? '0px' : '280px';
+      arrow.style.opacity = hidden ? '0' : '1';
+    }
 
+    arrow.addEventListener('click', togglePanel);
+    arrow.addEventListener('touchstart', e => { e.preventDefault(); togglePanel(); });
 
-document.addEventListener('mousemove', e => {
-  if (e.clientX < 10 && panel.classList.contains('hidden')) {
-    arrow.style.opacity = '1';
-  } else if (panel.classList.contains('hidden')) {
-    arrow.style.opacity = '0';
-  }
-});
-
-
+    document.addEventListener('mousemove', e => {
+      if (e.clientX < 10 && panel.classList.contains('hidden')) {
+        arrow.style.opacity = '1';
+      } else if (panel.classList.contains('hidden')) {
+        arrow.style.opacity = '0';
+      }
+    });
 
     document.getElementById("mapType").addEventListener("change", e => {
       map.removeLayer(osmLayer);
@@ -111,17 +128,17 @@ document.addEventListener('mousemove', e => {
       (e.target.value === "satellite" ? satelliteLayer : osmLayer).addTo(map);
     });
 
-    let points = JSON.parse(localStorage.getItem('savedPoints') || '[]');
-    let selectMode = false, currentIndex = -1, editIndex = -1;
-    const listDiv = document.getElementById('pointsList');
-    const searchInput = document.getElementById('searchPoints');
-    const addBtn = document.getElementById('addPoint');
-    const descFilter = document.getElementById('descFilter');
     descFilter.addEventListener('change', () => refreshList(searchInput.value.trim()));
-    const formTitle = document.getElementById('formTitle');
 
     function normalizePoint(p) {
-      return { name: p.name || "Без названия", desc: p.desc || "", lat: Number(p.lat), lng: Number(p.lng), photo: p.photo || null };
+      return {
+        id: p.id || crypto.randomUUID(),
+        name: p.name || "Без названия",
+        desc: p.desc || "",
+        lat: Number(p.lat),
+        lng: Number(p.lng),
+        photo: p.photo || null
+      };
     }
 
     function addMarker(p, i) {
@@ -131,6 +148,14 @@ document.addEventListener('mousemove', e => {
       marker.bindPopup(popup);
       marker.on("click", () => { flyToPoint(i); loadPointToForm(i); });
       p.marker = marker;
+    }
+
+    function redrawMarkers() {
+      points.forEach(p => {
+        if (p.marker) map.removeLayer(p.marker);
+      });
+      points.forEach((p, i) => addMarker(p, i));
+      refreshList(searchInput.value.trim());
     }
 
     function loadPointToForm(i) {
@@ -155,96 +180,155 @@ document.addEventListener('mousemove', e => {
       formTitle.textContent = "Добавить точку";
     }
 
-    function saveToLocalStorage() { localStorage.setItem('savedPoints', JSON.stringify(points.map(normalizePoint))); }
+    function saveToLocalStorage() {
+      localStorage.setItem('savedPoints', JSON.stringify(points.map(normalizePoint)));
+    }
 
-function refreshList(filter = '') {
-  listDiv.innerHTML = '';
-  const onlyWithDesc = descFilter.checked;
-  const lowerFilter = filter.toLowerCase();
+    async function loadFromSupabase() {
+      if (!supabase) {
+        setSyncStatus('локальный режим (укажи SUPABASE_URL)', '#b26a00');
+        return;
+      }
+      setSyncStatus('загрузка из Supabase...');
+      const { data, error } = await supabase
+        .from('points')
+        .select('id, name, desc, lat, lng, photo')
+        .order('created_at', { ascending: true });
 
+      if (error) {
+        setSyncStatus(`ошибка загрузки (${error.message})`, '#c62828');
+        return;
+      }
 
-  const filteredPoints = points
-    .map((p, i) => ({ ...p, index: i })) // сохраняем оригинальный индекс
-    .filter(p => (!onlyWithDesc || p.desc.trim()) && p.name.toLowerCase().includes(lowerFilter));
-
-
-  points.forEach(p => {
-    const visible = filteredPoints.some(fp => fp.lat === p.lat && fp.lng === p.lng);
-    if (p.marker) p.marker.setOpacity(visible ? 1 : 0);
-  });
-
-
-  filteredPoints.forEach(p => {
-    const div = document.createElement('div');
-    div.className = 'point-item';
-    div.innerHTML = `<div><b>${p.name}</b><br><small>${p.lat.toFixed(4)}, ${p.lng.toFixed(4)}</small></div>`;
-    div.onclick = () => { flyToPoint(p.index); loadPointToForm(p.index); };
-
-    const del = document.createElement('button');
-    del.textContent = '🗑';
-    del.className = 'delete-btn';
-    del.onclick = e => {
-      e.stopPropagation();
-      map.removeLayer(p.marker);
-      points.splice(p.index, 1);
+      points = (data || []).map(normalizePoint);
       saveToLocalStorage();
-      refreshList(searchInput.value.trim());
-    };
+      redrawMarkers();
+      setSyncStatus('подключено к Supabase', '#2e7d32');
+    }
 
-    div.appendChild(del);
-    listDiv.appendChild(div);
-  });
-}
+    async function upsertPointToSupabase(point) {
+      if (!supabase) return;
+      const payload = {
+        id: point.id,
+        name: point.name,
+        desc: point.desc,
+        lat: point.lat,
+        lng: point.lng,
+        photo: point.photo
+      };
+      const { error } = await supabase.from('points').upsert(payload);
+      if (error) throw error;
+    }
 
+    async function deletePointFromSupabase(pointId) {
+      if (!supabase) return;
+      const { error } = await supabase.from('points').delete().eq('id', pointId);
+      if (error) throw error;
+    }
 
-    function addOrEditPoint(p) {
+    async function deleteAllSupabase() {
+      if (!supabase) return;
+      const { error } = await supabase.from('points').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      if (error) throw error;
+    }
+
+    function refreshList(filter = '') {
+      listDiv.innerHTML = '';
+      const onlyWithDesc = descFilter.checked;
+      const lowerFilter = filter.toLowerCase();
+
+      const filteredPoints = points
+        .map((p, i) => ({ ...p, index: i }))
+        .filter(p => (!onlyWithDesc || p.desc.trim()) && p.name.toLowerCase().includes(lowerFilter));
+
+      points.forEach(p => {
+        const visible = filteredPoints.some(fp => fp.id === p.id);
+        if (p.marker) p.marker.setOpacity(visible ? 1 : 0);
+      });
+
+      filteredPoints.forEach(p => {
+        const div = document.createElement('div');
+        div.className = 'point-item';
+        div.innerHTML = `<div><b>${p.name}</b><br><small>${p.lat.toFixed(4)}, ${p.lng.toFixed(4)}</small></div>`;
+        div.onclick = () => { flyToPoint(p.index); loadPointToForm(p.index); };
+
+        const del = document.createElement('button');
+        del.textContent = '🗑';
+        del.className = 'delete-btn';
+        del.onclick = async e => {
+          e.stopPropagation();
+          const target = points[p.index];
+          if (target.marker) map.removeLayer(target.marker);
+          points.splice(p.index, 1);
+          saveToLocalStorage();
+          refreshList(searchInput.value.trim());
+          try {
+            await deletePointFromSupabase(target.id);
+          } catch (err) {
+            setSyncStatus(`ошибка удаления (${err.message})`, '#c62828');
+          }
+        };
+
+        div.appendChild(del);
+        listDiv.appendChild(div);
+      });
+    }
+
+    async function addOrEditPoint(p) {
+      const n = normalizePoint(p);
       if (editIndex >= 0) {
         const existing = points[editIndex];
-        Object.assign(existing, p);
-        map.removeLayer(existing.marker);
+        n.id = existing.id;
+        Object.assign(existing, n);
+        if (existing.marker) map.removeLayer(existing.marker);
         addMarker(existing, editIndex);
         saveToLocalStorage();
         refreshList(searchInput.value.trim());
         clearForm();
+        try {
+          await upsertPointToSupabase(existing);
+        } catch (err) {
+          setSyncStatus(`ошибка сохранения (${err.message})`, '#c62828');
+        }
       } else {
-        const n = normalizePoint(p);
         points.push(n);
         addMarker(n, points.length - 1);
         saveToLocalStorage();
         refreshList(searchInput.value.trim());
+        try {
+          await upsertPointToSupabase(n);
+        } catch (err) {
+          setSyncStatus(`ошибка сохранения (${err.message})`, '#c62828');
+        }
       }
     }
 
-function flyToPoint(realIndex) {
-  if (points.length === 0) return;
+    function flyToPoint(realIndex) {
+      if (points.length === 0) return;
 
-  const onlyWithDesc = descFilter.checked;
-  const filterText = searchInput.value.trim().toLowerCase();
+      const onlyWithDesc = descFilter.checked;
+      const filterText = searchInput.value.trim().toLowerCase();
 
-  const filtered = points
-    .map((p, i) => ({ ...p, i }))
-    .filter(p => (!onlyWithDesc || p.desc.trim()) && p.name.toLowerCase().includes(filterText));
+      const filtered = points
+        .map((p, i) => ({ ...p, i }))
+        .filter(p => (!onlyWithDesc || p.desc.trim()) && p.name.toLowerCase().includes(filterText));
 
-  if (filtered.length === 0) return;
+      if (filtered.length === 0) return;
 
+      let idx = filtered.findIndex(p => p.i === realIndex);
+      if (idx === -1) idx = 0;
 
-  let idx = filtered.findIndex(p => p.i === realIndex);
-  if (idx === -1) idx = 0;
+      const p = filtered[idx];
+      map.flyTo([p.lat, p.lng], 17, { animate: true, duration: 3 });
+      setTimeout(() => p.marker.openPopup(), 1500);
 
-  const p = filtered[idx];
-  map.flyTo([p.lat, p.lng], 17, { animate: true, duration: 3 });
-  setTimeout(() => p.marker.openPopup(), 1500);
-
-  currentIndex = p.i;
-}
-
-
-
+      currentIndex = p.i;
+    }
 
     document.getElementById('prevBtn').onclick = () => flyToPoint(currentIndex - 1);
     document.getElementById('nextBtn').onclick = () => flyToPoint(currentIndex + 1);
 
-    addBtn.onclick = () => {
+    addBtn.onclick = async () => {
       const name = document.getElementById('pointName').value.trim() || 'Без названия';
       const desc = document.getElementById('pointDesc').value.trim();
       const lat = parseFloat(document.getElementById('pointLat').value);
@@ -253,17 +337,22 @@ function flyToPoint(realIndex) {
       const photo = document.getElementById('pointPhoto');
       if (photo.files.length > 0) {
         const reader = new FileReader();
-        reader.onload = e => addOrEditPoint({ name, desc, lat, lng, photo: e.target.result });
+        reader.onload = async e => addOrEditPoint({ name, desc, lat, lng, photo: e.target.result });
         reader.readAsDataURL(photo.files[0]);
-      } else addOrEditPoint({ name, desc, lat, lng });
+      } else await addOrEditPoint({ name, desc, lat, lng });
     };
 
-    document.getElementById('deleteAll').onclick = () => {
+    document.getElementById('deleteAll').onclick = async () => {
       if (!confirm("Удалить все точки?")) return;
       points.forEach(p => p.marker && map.removeLayer(p.marker));
       points = [];
       saveToLocalStorage();
       refreshList();
+      try {
+        await deleteAllSupabase();
+      } catch (err) {
+        setSyncStatus(`ошибка очистки (${err.message})`, '#c62828');
+      }
     };
 
     document.getElementById('saveJSON').onclick = () => {
@@ -283,7 +372,9 @@ function flyToPoint(realIndex) {
         if (!Array.isArray(data)) return alert("Неверный формат JSON!");
         points.forEach(p => p.marker && map.removeLayer(p.marker));
         points = [];
-        data.forEach(p => addOrEditPoint(p));
+        for (const point of data) {
+          await addOrEditPoint(point);
+        }
         saveToLocalStorage();
         refreshList();
         alert("Импорт JSON завершён!");
@@ -309,7 +400,7 @@ function flyToPoint(realIndex) {
           if (!coords) continue;
           const [lng, lat] = coords.split(',').map(Number);
           if (isNaN(lat) || isNaN(lng)) continue;
-          addOrEditPoint({ name, desc, lat, lng });
+          await addOrEditPoint({ name, desc, lat, lng });
         }
         saveToLocalStorage();
         refreshList();
@@ -320,8 +411,24 @@ function flyToPoint(realIndex) {
     };
 
     searchInput.oninput = e => refreshList(e.target.value.trim());
-    points.forEach((p, i) => addMarker(p, i));
-    refreshList();
+
+    map.on('click', e => {
+      if (!selectMode) return;
+      document.getElementById('pointLat').value = e.latlng.lat.toFixed(6);
+      document.getElementById('pointLng').value = e.latlng.lng.toFixed(6);
+      selectMode = false;
+      document.getElementById('selectModeBtn').style.background = '#007bff';
+    });
+
+    document.getElementById('selectModeBtn').onclick = () => {
+      selectMode = !selectMode;
+      document.getElementById('selectModeBtn').style.background = selectMode ? '#28a745' : '#007bff';
+    };
+
+    (async () => {
+      redrawMarkers();
+      await loadFromSupabase();
+    })();
   </script>
 </body>
 </html>
