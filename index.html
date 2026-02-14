@@ -29,7 +29,6 @@
     .nav-btn:active { background: #0056b3; transform: scale(0.96); }
     #loading { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.3); z-index: 2000; font-family: system-ui, sans-serif; }
 
-    /* Dark theme */
     #panel { transition: all 0.3s ease, background 0.4s ease, color 0.4s ease; color: #111; }
     #panel input, #panel textarea, #panel select { transition: background 0.4s ease, color 0.4s ease, border-color 0.4s ease; }
     .point-item { transition: background 0.4s ease, color 0.4s ease; }
@@ -41,20 +40,17 @@
     body.dark .point-item:hover { background: #33334a; }
     body.dark #toggleArrow { background: #1e90ff; }
 
-    /* Dark scrollbar */
     body.dark #panel::-webkit-scrollbar { width: 6px; }
     body.dark #panel::-webkit-scrollbar-track { background: #16161e; border-radius: 10px; }
     body.dark #panel::-webkit-scrollbar-thumb { background: #444; border-radius: 10px; }
     body.dark #panel::-webkit-scrollbar-thumb:hover { background: #666; }
 
-    /* Drag-and-drop */
     .point-item { cursor: grab; }
     .point-item.dragging { opacity: 0.4; cursor: grabbing; }
     .point-item.drag-over { outline: 2px dashed #007bff; background: #d0e8ff; }
     body.dark .point-item.drag-over { background: #1a2a40; outline-color: #4da3ff; }
     .drag-handle { color: #aaa; font-size: 16px; margin-right: 5px; cursor: grab; user-select: none; flex-shrink: 0; }
     body.dark .drag-handle { color: #555; }
-    /* Route mode */
     #routePanel { display:none; }
     #routePanel.active { display:block; }
     #mainPanel.route-hidden { display:none; }
@@ -69,20 +65,16 @@
     body.dark .route-item { background:#2a2a38; color:#e0e0e0; }
     body.dark .route-item.drag-over { background:#2a1a40; }
 
-    /* Online counter */
     #onlineBadge { display:flex; align-items:center; gap:5px; font-size:12px; color:#555; margin-bottom:8px; }
     #onlineDot { width:8px; height:8px; border-radius:50%; background:#28a745; animation:blink 2s infinite; flex-shrink:0; }
     @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.35} }
     body.dark #onlineBadge { color:#aaa; }
 
-    /* Wiki button */
     .wiki-btn { background:#f8a100 !important; color:#fff; border:none; border-radius:4px; padding:3px 7px; font-size:12px; cursor:pointer; flex-shrink:0; width:auto !important; }
     .wiki-btn:disabled { opacity:.5; cursor:default; }
 
-    /* Route quick button */
     .route-q-btn { background:#6f42c1 !important; color:#fff; border:none; border-radius:5px; padding:4px 7px; font-size:12px; cursor:pointer; flex-shrink:0; width:auto !important; }
 
-    /* Admin panel */
     #adminPanel { display:none; position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); background:white; width:90%; max-width:800px; max-height:80vh; border-radius:12px; box-shadow:0 4px 20px rgba(0,0,0,0.3); z-index:3000; overflow:hidden; }
     #adminPanel.active { display:flex; flex-direction:column; }
     #adminHeader { display:flex; justify-content:space-between; align-items:center; padding:15px 20px; background:#007bff; color:white; }
@@ -161,13 +153,11 @@
 
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
   <script>
-    // Supabase setup
     const { createClient } = supabase;
     const supabaseUrl = 'https://diniabtxchgtbcfldwib.supabase.co';
     const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRpbmlhYnR4Y2hndGJjZmxkd2liIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzA5MTI1NTIsImV4cCI6MjA4NjQ4ODU1Mn0.fWuFphXouWK35E_qNe6AbokMT-pXeSHodoga1UwYP6c';
     const sb = createClient(supabaseUrl, supabaseKey);
 
-    // Track visitor
     let sessionId = null;
     
     async function trackVisitor() {
@@ -177,11 +167,9 @@
         let browser = 'Unknown';
         let os = 'Unknown';
 
-        // Detect device
         if (/mobile/i.test(ua)) device = 'Mobile';
         else if (/tablet|ipad/i.test(ua)) device = 'Tablet';
 
-        // Detect browser
         if (ua.indexOf('Firefox') > -1) browser = 'Firefox';
         else if (ua.indexOf('SamsungBrowser') > -1) browser = 'Samsung Browser';
         else if (ua.indexOf('Opera') > -1 || ua.indexOf('OPR') > -1) browser = 'Opera';
@@ -190,14 +178,13 @@
         else if (ua.indexOf('Chrome') > -1) browser = 'Chrome';
         else if (ua.indexOf('Safari') > -1) browser = 'Safari';
 
-        // Detect OS
         if (ua.indexOf('Windows') > -1) os = 'Windows';
         else if (ua.indexOf('Mac') > -1) os = 'MacOS';
         else if (ua.indexOf('Linux') > -1) os = 'Linux';
         else if (ua.indexOf('Android') > -1) os = 'Android';
         else if (ua.indexOf('iOS') > -1 || ua.indexOf('iPhone') > -1 || ua.indexOf('iPad') > -1) os = 'iOS';
 
-        // Get IP (using ipify API)
+        // Get IP
         let ip = 'Unknown';
         try {
           const ipRes = await fetch('https://api.ipify.org?format=json');
@@ -205,7 +192,6 @@
           ip = ipData.ip;
         } catch {}
 
-        // Save to Supabase and get session ID
         const { data, error } = await sb.from('visitor_logs').insert([{
           ip,
           user_agent: ua,
@@ -217,7 +203,6 @@
         
         if (data && data[0]) {
           sessionId = data[0].id;
-          // Update heartbeat every 30 seconds
           setInterval(updateHeartbeat, 30000);
         }
       } catch (err) {
@@ -236,7 +221,6 @@
       }
     }
 
-    // Admin panel functions
     document.getElementById('adminBadge').onclick = async () => {
       const panel = document.getElementById('adminPanel');
       panel.classList.add('active');
@@ -254,7 +238,6 @@
           return;
         }
 
-        // Определяем активные сессии (последняя активность < 2 минут назад)
         const now = new Date();
         const activeSessions = data.filter(v => {
           if (!v.last_seen) return false;
@@ -320,14 +303,12 @@
       document.getElementById('adminPanel').classList.remove('active');
     };
 
-    // Auto-refresh admin panel every 10 seconds if open
     setInterval(() => {
       if (document.getElementById('adminPanel').classList.contains('active')) {
         loadAdminData();
       }
     }, 10000);
 
-    // Track on page load
     trackVisitor();
 
 
@@ -411,7 +392,6 @@
       formTitle.textContent = "Добавить точку";
     }
 
-    // Load points from Supabase
     async function loadPoints() {
       try {
         const { data, error } = await sb.from('markers').select('*');
@@ -502,7 +482,6 @@
           }
         };
 
-        // 🗺 Quick add to route
         const rqBtn = document.createElement('button');
         rqBtn.textContent = '🗺';
         rqBtn.className = 'route-q-btn';
@@ -513,7 +492,6 @@
           if (routeMode) renderRoutePanel();
         };
 
-        // 📖 Wiki button
         const wikiBtn = document.createElement('button');
         wikiBtn.textContent = '📖';
         wikiBtn.className = 'wiki-btn';
@@ -523,7 +501,6 @@
           if (!p.name) return alert('У точки нет названия для поиска в Вики');
           wikiBtn.disabled = true; wikiBtn.textContent = '🔍';
           try {
-            // Step 1: Search Wikipedia — добавляем уточнения что это место
             const searches = [
               p.name + ' село Казахстан',
               p.name + ' город Казахстан',
@@ -542,7 +519,6 @@
               const results = searchJson?.query?.search || [];
 
               for (const r of results) {
-                // Пропускаем статьи которые явно про людей
                 const titleLower = r.title.toLowerCase();
                 const snippetLower = (r.snippet || '').toLowerCase();
                 const isPerson =
@@ -554,7 +530,6 @@
                   /(актёр|певец|политик|спортсмен|учёный|писатель)/.test(snippetLower);
                 if (isPerson) continue;
 
-                // Получаем БОЛЬШЕ текста страницы (не только intro, а первую секцию целиком)
                 const pageRes = await fetch(
                   `https://ru.wikipedia.org/w/api.php?action=query&prop=extracts&exsectionformat=plain&explaintext=true&titles=${encodeURIComponent(r.title)}&format=json&origin=*`
                 );
@@ -564,7 +539,6 @@
                 const page = Object.values(pages)[0];
                 const text = (page?.extract || '').trim();
 
-                // Проверяем что текст про место, а не человека
                 const textLower = text.toLowerCase();
                 const isPlaceLike =
                   textLower.includes('населённый пункт') ||
@@ -594,10 +568,8 @@
 
             if (!fullText) throw new Error('Статья о месте не найдена');
 
-            // Step 2: Умное сжатие - убираем повторы и берём РАЗНУЮ инфу
             wikiBtn.textContent = '✍️';
             
-            // Чистим текст от технических данных
             let cleaned = fullText.split('\n').join(' ').replace(/[ \t]+/g, ' ').trim();
             cleaned = cleaned
               .replace(/[,.]?\s*Код КАТО[^.]*\.?/gi, '')
@@ -609,24 +581,19 @@
               .replace(/\([^)]*год[аеу][^)]*\)/gi, '')
               .replace(/  +/g, ' ').trim();
             
-            // Разбиваем на предложения
             const sentences = cleaned.match(/[^.!?]+[.!?]+/g) || [cleaned];
             
-            // УБИРАЕМ ДУБЛИКАТЫ и короткие предложения
             const uniqueSentences = [];
             const seen = new Set();
             for (const s of sentences) {
               const trimmed = s.trim();
               const normalized = trimmed.toLowerCase().replace(/\s+/g, ' ');
-              // Игнорируем дубликаты и слишком короткие (< 30 символов)
               if (!seen.has(normalized) && trimmed.length >= 30) {
                 seen.add(normalized);
                 uniqueSentences.push(trimmed);
               }
             }
             
-            // УМНОЕ СЖАТИЕ: берём 2-4 разнообразных предложения
-            // Приоритет: первое (определение) + предложения с разной инфой
             let desc = '';
             let sentCount = 0;
             const maxLength = 400;
@@ -634,51 +601,42 @@
             for (let i = 0; i < uniqueSentences.length && sentCount < 4; i++) {
               const s = uniqueSentences[i];
               
-              // Проверяем не превысим ли лимит
               if ((desc + s).length > maxLength) {
-                // Если это первое предложение и оно слишком длинное - обрезаем
                 if (sentCount === 0 && s.length > 300) {
                   desc = s.slice(0, 297) + '...';
                   break;
                 }
-                // Иначе прекращаем добавлять
                 break;
               }
               
               desc += s + ' ';
               sentCount++;
               
-              // Минимум 2 предложения, но если уже > 200 символов и есть 2+ предложения - можно остановиться
               if (sentCount >= 2 && desc.length >= 200 && desc.length <= 350) {
-                // Проверяем, есть ли ещё место для короткого предложения
                 const nextSent = uniqueSentences[i + 1];
                 if (nextSent && (desc + nextSent).length <= maxLength) {
-                  continue; // добавим ещё одно
+                  continue; 
                 } else {
-                  break; // хватит
+                  break; 
                 }
               }
             }
             
             desc = desc.trim();
             
-            // На всякий случай обрезаем если вышло больше 400
             if (desc.length > 400) {
               desc = desc.slice(0, 397) + '...';
             }
             
             if (!desc) desc = cleaned.slice(0, 300);
 
-            // Сразу сохраняем в Supabase — не ждём нажатия кнопки
             wikiBtn.textContent = '💾';
             const pt = points[p.index];
             const { error } = await sb.from('markers').update({ desc: desc }).eq('id', pt.id);
             if (error) throw new Error('Ошибка сохранения: ' + error.message);
-            // Обновляем в памяти и маркере
             pt.desc = desc;
             map.removeLayer(pt.marker);
             addMarker(pt, p.index);
-            // Показываем в форме
             loadPointToForm(p.index);
             document.getElementById('pointDesc').value = desc;
             panel.scrollTop = 0;
@@ -749,7 +707,6 @@
       refreshList(searchInput.value.trim());
     }
 
-    // prevBtn/nextBtn handled in route mode section
 
     document.getElementById('migrateFromLocal').onclick = async () => {
       try {
@@ -803,7 +760,6 @@
         processed++;
         console.log(`[${processed}/${pointsWithNames.length}] Обработка: ${pt.name}`);
         
-        // Пропускаем если уже есть описание
         if (pt.desc && pt.desc.trim()) {
           console.log(`  ⏭ Уже есть описание`);
           continue;
@@ -870,7 +826,6 @@
           }
 
           if (foundDesc) {
-            // УМНОЕ СЖАТИЕ с удалением дубликатов и выбором разнообразной инфы
             let cleaned = foundDesc.split('\n').join(' ').replace(/[ \t]+/g, ' ').trim();
             cleaned = cleaned
               .replace(/[,.]?\s*Код КАТО[^.]*\.?/gi, '')
@@ -884,7 +839,6 @@
             
             const sentences = cleaned.match(/[^.!?]+[.!?]+/g) || [cleaned];
             
-            // УБИРАЕМ ДУБЛИКАТЫ
             const uniqueSentences = [];
             const seen = new Set();
             for (const s of sentences) {
@@ -999,7 +953,6 @@
           if (!isNaN(p.lat) && !isNaN(p.lng)) {
             await addOrEditPoint(p.lat, p.lng, p.name || '', p.desc || '');
             count++;
-            // Небольшая задержка чтобы не перегрузить Supabase
             await new Promise(resolve => setTimeout(resolve, 100));
           }
         }
@@ -1018,19 +971,16 @@
       try {
         let kmlText = '';
         
-        // Check if it's KMZ (zip file) or plain KML
         if (file.name.endsWith('.kmz')) {
-          // KMZ - extract KML from zip
           const zip = await JSZip.loadAsync(file);
           const kmlFile = Object.keys(zip.files).find(name => name.endsWith('.kml'));
           if (!kmlFile) return alert("В KMZ нет KML-файла!");
           kmlText = await zip.files[kmlFile].async('text');
         } else {
-          // Plain KML - read directly
+          
           kmlText = await file.text();
         }
         
-        // Parse KML
         const xml = new DOMParser().parseFromString(kmlText, 'text/xml');
         const placemarks = xml.getElementsByTagName('Placemark');
         
@@ -1071,8 +1021,6 @@
 
     searchInput.oninput = e => refreshList(e.target.value.trim());
 
-
-    // ── ROUTE MODE ────────────────────────────────────────────────────────────
     let routeOrder = []; // array of point indices defining navigation order
     let routePos = 0;    // current position in routeOrder
     let routeMode = false;
@@ -1162,7 +1110,6 @@
       if (el.innerHTML === '') el.innerHTML = '<p style="font-size:12px;color:#888;text-align:center;">Все точки добавлены</p>';
     }
 
-    // Override prev/next to use routeOrder when active
     document.getElementById('prevBtn').onclick = () => {
       if (routeMode && routeOrder.length > 0) {
         routePos = routePos <= 0 ? routeOrder.length - 1 : routePos - 1;
@@ -1183,10 +1130,8 @@
         flyToPoint(newIdx);
       }
     };
-    // ── END ROUTE MODE ────────────────────────────────────────────────────────
 
 
-    // ── Online presence ──────────────────────────────────────────────────────
     (function() {
       try {
         const presenceKey = Math.random().toString(36).slice(2);
@@ -1207,3 +1152,4 @@
   </script>
 </body>
 </html>
+
