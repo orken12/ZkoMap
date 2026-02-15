@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>ZkoMapAdmin — v2.5.0</title>
+  <title>ZkoMap Admin — v2.6.0</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
   <script src="https://unpkg.com/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -126,6 +126,7 @@
     <button id="addPoint">Добавить точку</button>
     <button id="migrateFromLocal" style="background:#28a745;">Перенести из localStorage</button>
     <button id="bulkWiki" style="background:#f8a100;">📖 Добавить описания всем (Википедия)</button>
+    <button id="autoGenBtn" style="background:#10b981;">🗺️ Автогенерация точек Казахстана</button>
     <button id="deleteAll" style="background:#dc3545;">Удалить все точки</button>
     <button id="saveJSON" style="background:#17a2b8;">Экспорт в JSON</button>
     <label style="font-size:13px;color:#333;">Импортировать из JSON:</label>
@@ -167,6 +168,54 @@
     </div>
     <div id="adminContent">
       <p style="color:#666;font-size:13px;">Загрузка данных...</p>
+    </div>
+  </div>
+
+  
+  <div id="autoGenModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:5000; align-items:center; justify-content:center;">
+    <div style="background:white; border-radius:12px; padding:24px; width:90%; max-width:500px; box-shadow:0 8px 32px rgba(0,0,0,0.4);">
+      <h3 style="margin:0 0 16px; font-size:18px;">🗺️ Автогенерация точек Казахстана</h3>
+      
+      <label style="display:block; margin-bottom:12px;">
+        <input type="checkbox" id="autoGenAll" style="margin-right:8px; width:auto;"/>
+        <span style="font-weight:600; font-size:13px;">Добавить ВСЕ точки выбранной области</span>
+      </label>
+      
+      <div id="countWrap">
+        <label style="display:block; margin-bottom:6px; font-weight:600; font-size:13px;">Количество точек (если не выбрано "все"):</label>
+        <input type="number" id="autoGenCount" min="1" max="10000" value="50" style="width:100%; padding:10px; border:2px solid #e5e7eb; border-radius:8px; margin-bottom:12px; font-size:14px;"/>
+      </div>
+      
+      <label style="display:block; margin-bottom:6px; font-weight:600; font-size:13px;">Область:</label>
+      <select id="autoGenRegion" style="width:100%; padding:10px; border:2px solid #e5e7eb; border-radius:8px; margin-bottom:16px; font-size:14px;">
+        <option value="all">Весь Казахстан</option>
+        <option value="zko">Западно-Казахстанская область</option>
+        <option value="aktobe">Актюбинская область</option>
+        <option value="atyrau">Атырауская область</option>
+        <option value="mangystau">Мангистауская область</option>
+        <option value="karaganda">Карагандинская область</option>
+        <option value="kostanay">Костанайская область</option>
+        <option value="pavlodar">Павлодарская область</option>
+        <option value="sko">Северо-Казахстанская область</option>
+        <option value="vko">Восточно-Казахстанская область</option>
+        <option value="almaty">Алматинская область</option>
+        <option value="zhambyl">Жамбылская область</option>
+        <option value="turkestan">Туркестанская область</option>
+        <option value="kyzylorda">Кызылординская область</option>
+        <option value="akmola">Акмолинская область</option>
+      </select>
+      
+      <div style="display:flex; gap:8px;">
+        <button id="autoGenStart" style="flex:1; background:#10b981; color:white; border:none; padding:12px; border-radius:8px; font-weight:600; cursor:pointer;">Начать генерацию</button>
+        <button id="autoGenCancel" style="flex:1; background:#6b7280; color:white; border:none; padding:12px; border-radius:8px; font-weight:600; cursor:pointer;">Отмена</button>
+      </div>
+      
+      <div id="autoGenProgress" style="display:none; margin-top:16px; padding:12px; background:#f3f4f6; border-radius:8px;">
+        <div style="font-size:13px; color:#374151; margin-bottom:4px;">Прогресс: <span id="autoGenCurrent">0</span>/<span id="autoGenTotal">0</span></div>
+        <div style="height:6px; background:#e5e7eb; border-radius:3px; overflow:hidden;">
+          <div id="autoGenBar" style="height:100%; background:#10b981; width:0%; transition:width 0.3s;"></div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -1248,6 +1297,275 @@
 
 
     // ── Online presence ──────────────────────────────────────────────────────
+    // ── АВТОГЕНЕРАЦИЯ ТОЧЕК КАЗАХСТАНА ──────────────────────────────────────
+    const kazakhstanPlaces = {
+      zko: [
+        // Города
+        {name:'Уральск',lat:51.2167,lng:51.3667},{name:'Аксай',lat:51.1667,lng:52.9667},{name:'Жанибек',lat:49.3833,lng:46.8833},
+        // Села Бокейординского района
+        {name:'Сайхин',lat:49.83,lng:48.49},{name:'Чапаево',lat:49.77,lng:48.15},{name:'Жалпактал',lat:49.65,lng:48.80},
+        {name:'Караозек',lat:49.91,lng:47.99},{name:'Таскала',lat:49.72,lng:48.92},{name:'Федоровка',lat:50.83,lng:50.68},
+        // Села Бурлинского района
+        {name:'Бурлин',lat:51.48,lng:54.05},{name:'Аксуат',lat:51.55,lng:53.87},{name:'Бисмурун',lat:51.42,lng:54.21},
+        {name:'Жарсуат',lat:51.48,lng:53.29},{name:'Каратюбе',lat:51.39,lng:54.17},
+        // Села Жангалинского района
+        {name:'Жангала',lat:49.17,lng:50.63},{name:'Шубарши',lat:49.05,lng:50.89},{name:'Курайлы',lat:49.23,lng:50.47},
+        {name:'Каршыга',lat:49.31,lng:50.55},{name:'Караобе',lat:49.09,lng:51.02},
+        // Села Жанибекского района  
+        {name:'Дарьинск',lat:49.27,lng:47.18},{name:'Кзылкога',lat:49.45,lng:46.95},{name:'Переметное',lat:50.68,lng:51.13},
+        {name:'Таловка',lat:49.52,lng:47.12},{name:'Мамай',lat:49.38,lng:47.33},
+        // Села Зеленовского района
+        {name:'Зеленовка',lat:51.25,lng:52.18},{name:'Зеленое',lat:51.31,lng:52.05},{name:'Федоровка',lat:51.17,lng:52.33},
+        {name:'Чаганка',lat:51.22,lng:52.42},{name:'Дмитриевка',lat:51.28,lng:52.27},
+        // Села Казталовского района
+        {name:'Казталовка',lat:50.65,lng:50.58},{name:'Донское',lat:50.72,lng:50.47},{name:'Большевик',lat:50.58,lng:50.71},
+        {name:'Жанатан',lat:50.61,lng:50.52},{name:'Караагаш',lat:50.68,lng:50.63},
+        // Села Каратобинского района
+        {name:'Каратобе',lat:51.07,lng:51.83},{name:'Акжар',lat:51.15,lng:51.72},{name:'Сарыкамыс',lat:51.02,lng:51.95},
+        {name:'Акбулак',lat:50.98,lng:51.78},{name:'Карасу',lat:51.11,lng:51.88},
+        // Села Сырымского района
+        {name:'Жымпиты',lat:50.65,lng:52.35},{name:'Сарыколь',lat:50.72,lng:52.48},{name:'Карасу',lat:50.58,lng:52.21},
+        {name:'Акжайык',lat:50.63,lng:52.52},{name:'Коктобе',lat:50.69,lng:52.39},
+        // Села Таскалинского района
+        {name:'Таскала',lat:49.73,lng:49.28},{name:'Жанаталап',lat:49.65,lng:49.42},{name:'Коктал',lat:49.81,lng:49.15},
+        {name:'Кокарал',lat:49.77,lng:49.33},{name:'Кызылтал',lat:49.69,lng:49.51},
+        // Села Теректинского района
+        {name:'Теректы',lat:50.38,lng:52.72},{name:'Кайнар',lat:50.45,lng:52.65},{name:'Жана-Кайнар',lat:50.32,lng:52.83},
+        {name:'Жанаконыс',lat:50.41,lng:52.77},{name:'Караагаш',lat:50.35,lng:52.69},
+        // Села Чингирлауского района
+        {name:'Чингирлау',lat:51.58,lng:50.55},{name:'Караузек',lat:51.65,lng:50.42},{name:'Сары',lat:51.52,lng:50.68},
+        {name:'Жамбай',lat:51.61,lng:50.51},{name:'Каменка',lat:51.03,lng:51.07},
+        // Дополнительные села
+        {name:'Чапаев',lat:50.17,lng:51.18},{name:'Жетыколь',lat:49.89,lng:52.59},{name:'Каражар',lat:50.92,lng:51.45},
+        {name:'Коктал',lat:50.55,lng:51.78},{name:'Сарыкопа',lat:51.12,lng:52.33},{name:'Кайрак',lat:50.28,lng:51.92}
+      ],
+      aktobe: [
+        {name:'Актобе',lat:50.2961,lng:57.1672},{name:'Хромтау',lat:50.2547,lng:58.4361},{name:'Алга',lat:50.1833,lng:57.3333},
+        {name:'Кобда',lat:48.91,lng:59.66},{name:'Мартук',lat:49.75,lng:58.83},{name:'Темир',lat:49.14,lng:57.14},
+        {name:'Эмба',lat:48.83,lng:58.15},{name:'Кандыагаш',lat:49.47,lng:57.42},{name:'Шубаркудук',lat:49.15,lng:59.38},
+        {name:'Иргиз',lat:48.63,lng:61.28},{name:'Байганин',lat:48.68,lng:55.87},{name:'Мугалжар',lat:49.65,lng:58.52},
+        {name:'Карабутак',lat:49.95,lng:58.17},{name:'Жетыкара',lat:49.28,lng:57.87},{name:'Каргалы',lat:50.12,lng:57.58}
+      ],
+      atyrau: [
+        {name:'Атырау',lat:47.1167,lng:51.8833},{name:'Кульсары',lat:46.9667,lng:54.0167},{name:'Макат',lat:47.6500,lng:53.3167},
+        {name:'Индерборский',lat:48.5667,lng:51.9000},{name:'Жылыой',lat:47.1667,lng:54.6167},{name:'Доссор',lat:46.6833,lng:53.0167},
+        {name:'Балыкши',lat:47.07,lng:51.85},{name:'Миялы',lat:47.25,lng:52.15},{name:'Курмангазы',lat:46.77,lng:52.08},
+        {name:'Махамбет',lat:47.65,lng:52.95},{name:'Кызылкога',lat:47.42,lng:52.48},{name:'Ганюшкино',lat:47.33,lng:52.72}
+      ],
+      mangystau: [
+        {name:'Актау',lat:43.6500,lng:51.2000},{name:'Жанаозен',lat:43.3333,lng:52.8667},{name:'Бейнеу',lat:45.3167,lng:55.2000},
+        {name:'Форт-Шевченко',lat:44.5167,lng:50.2667},{name:'Сай-Утес',lat:43.1833,lng:52.3500},{name:'Шетпе',lat:44.17,lng:52.12},
+        {name:'Каракия',lat:43.83,lng:51.73},{name:'Тюпкараган',lat:43.55,lng:52.65},{name:'Баутино',lat:44.73,lng:50.13},
+        {name:'Курык',lat:43.18,lng:52.47},{name:'Каламкас',lat:43.92,lng:51.45},{name:'Актау-3',lat:43.62,lng:51.17}
+      ],
+      karaganda: [
+        {name:'Караганда',lat:49.8047,lng:73.1094},{name:'Темиртау',lat:50.0667,lng:72.9667},{name:'Балхаш',lat:46.8500,lng:75.0000},
+        {name:'Сатпаев',lat:47.9167,lng:66.9167},{name:'Жезказган',lat:47.7833,lng:67.7167},{name:'Каражал',lat:48.0167,lng:70.0167},
+        {name:'Приозерск',lat:46.75,lng:74.98},{name:'Абай',lat:49.63,lng:72.85},{name:'Сарань',lat:49.87,lng:73.12},
+        {name:'Шахтинск',lat:49.72,lng:72.58},{name:'Каркаралинск',lat:49.42,lng:75.48},{name:'Жанаарка',lat:47.35,lng:70.22},
+        {name:'Улытау',lat:48.25,lng:67.03},{name:'Актогай',lat:47.78,lng:67.28},{name:'Агадырь',lat:47.52,lng:71.68}
+      ],
+      kostanay: [
+        {name:'Костанай',lat:53.2139,lng:63.6247},{name:'Рудный',lat:52.9667,lng:63.1167},{name:'Аркалык',lat:50.2486,lng:66.9117},
+        {name:'Лисаковск',lat:52.5333,lng:62.5000},{name:'Житикара',lat:52.1833,lng:61.2000},{name:'Узунколь',lat:52.27,lng:62.48},
+        {name:'Тарановское',lat:53.75,lng:64.93},{name:'Федоровка',lat:52.42,lng:65.38},{name:'Аманкарагай',lat:51.12,lng:62.83},
+        {name:'Аулиеколь',lat:51.68,lng:64.22},{name:'Джангильдин',lat:51.57,lng:62.32},{name:'Карабалык',lat:53.73,lng:62.18},
+        {name:'Карасу',lat:53.05,lng:65.75},{name:'Камысты',lat:52.78,lng:64.28},{name:'Затобольск',lat:52.48,lng:61.18}
+      ],
+      pavlodar: [
+        {name:'Павлодар',lat:52.2869,lng:76.9461},{name:'Экибастуз',lat:51.7236,lng:75.3222},{name:'Аксу',lat:52.0400,lng:76.9300},
+        {name:'Качиры',lat:51.9333,lng:78.1167},{name:'Баянаул',lat:50.80,lng:75.72},{name:'Железинка',lat:52.48,lng:77.85},
+        {name:'Успенка',lat:52.77,lng:77.28},{name:'Шарбакты',lat:51.42,lng:77.55},{name:'Майкаин',lat:51.37,lng:73.55},
+        {name:'Иртышск',lat:53.35,lng:76.42},{name:'Лебяжье',lat:52.52,lng:75.28},{name:'Актогай',lat:51.17,lng:76.32}
+      ],
+      sko: [
+        {name:'Петропавловск',lat:54.8667,lng:69.1500},{name:'Булаево',lat:54.9000,lng:70.4333},{name:'Тайынша',lat:53.8667,lng:69.7167},
+        {name:'Мамлютка',lat:55.0667,lng:67.7500},{name:'Пресновка',lat:54.77,lng:69.57},{name:'Явленка',lat:54.23,lng:70.77},
+        {name:'Смирново',lat:54.58,lng:69.93},{name:'Кызылту',lat:54.12,lng:68.48},{name:'Аккайынский',lat:54.97,lng:68.32},
+        {name:'Тимирязево',lat:54.63,lng:69.18},{name:'Айыртау',lat:53.23,lng:70.28},{name:'Бишкуль',lat:53.97,lng:69.35}
+      ],
+      vko: [
+        {name:'Усть-Каменогорск',lat:49.9481,lng:82.6281},{name:'Семей',lat:50.4111,lng:80.2275},{name:'Риддер',lat:50.3450,lng:83.5100},
+        {name:'Зыряновск',lat:49.7333,lng:84.2667},{name:'Шемонаиха',lat:50.6333,lng:81.9000},{name:'Курчатов',lat:50.7667,lng:78.5833},
+        {name:'Серебрянск',lat:49.67,lng:83.45},{name:'Глубокое',lat:49.93,lng:82.32},{name:'Большенарымское',lat:49.22,lng:82.73},
+        {name:'Уланский',lat:50.12,lng:81.35},{name:'Аягоз',lat:47.97,lng:80.42},{name:'Жарма',lat:47.53,lng:80.03},
+        {name:'Шар',lat:50.57,lng:81.07},{name:'Защита',lat:50.25,lng:82.88},{name:'Урджар',lat:47.10,lng:81.63}
+      ],
+      almaty: [
+        {name:'Талдыкорган',lat:45.0150,lng:78.3739},{name:'Капшагай',lat:43.8833,lng:77.0833},{name:'Талгар',lat:43.3000,lng:77.2333},
+        {name:'Есик',lat:43.3500,lng:77.4500},{name:'Жаркент',lat:44.1667,lng:80.0000},{name:'Текели',lat:45.25,lng:79.87},
+        {name:'Каскелен',lat:43.20,lng:76.63},{name:'Сарканд',lat:45.42,lng:79.92},{name:'Панфилов',lat:43.35,lng:79.97},
+        {name:'Ушарал',lat:46.18,lng:81.53},{name:'Уштобе',lat:45.25,lng:77.98},{name:'Карабулак',lat:43.77,lng:77.55},
+        {name:'Отеген-Батыр',lat:43.53,lng:76.97},{name:'Алгабас',lat:44.73,lng:78.52},{name:'Кокпекты',lat:46.67,lng:82.12}
+      ],
+      zhambyl: [
+        {name:'Тараз',lat:42.9000,lng:71.3667},{name:'Шу',lat:43.5981,lng:73.7578},{name:'Каратау',lat:43.1833,lng:70.4667},
+        {name:'Мерке',lat:42.9000,lng:73.1833},{name:'Луговое',lat:43.38,lng:73.45},{name:'Жамбыл',lat:43.32,lng:71.12},
+        {name:'Аса',lat:43.38,lng:71.75},{name:'Кордай',lat:43.28,lng:75.25},{name:'Тассай',lat:42.52,lng:72.23},
+        {name:'Сарысу',lat:44.72,lng:73.58},{name:'Богетсай',lat:42.67,lng:71.77},{name:'Мойынкум',lat:43.97,lng:73.97}
+      ],
+      turkestan: [
+        {name:'Туркестан',lat:43.3000,lng:68.2500},{name:'Шымкент',lat:42.3167,lng:69.5964},{name:'Кентау',lat:43.5167,lng:68.5000},
+        {name:'Арысь',lat:42.4333,lng:68.8000},{name:'Сарыагаш',lat:41.4500,lng:69.1667},{name:'Ленгер',lat:42.18,lng:69.88},
+        {name:'Жетысай',lat:41.27,lng:69.80},{name:'Казыгурт',lat:41.68,lng:69.40},{name:'Шардара',lat:41.25,lng:67.97},
+        {name:'Отырар',lat:42.58,lng:68.30},{name:'Туркестан',lat:43.30,lng:68.25},{name:'Келес',lat:42.17,lng:70.88},
+        {name:'Махтаарал',lat:41.73,lng:68.72},{name:'Ордабасы',lat:42.62,lng:69.68},{name:'Түлкібас',lat:42.45,lng:70.03}
+      ],
+      kyzylorda: [
+        {name:'Кызылорда',lat:44.8528,lng:65.5094},{name:'Байконыр',lat:45.6167,lng:63.3167},{name:'Аральск',lat:46.7833,lng:61.6667},
+        {name:'Шиели',lat:44.1667,lng:66.7333},{name:'Жалагаш',lat:44.75,lng:66.82},{name:'Казалинск',lat:45.77,lng:62.10},
+        {name:'Жосалы',lat:45.48,lng:64.08},{name:'Теренозек',lat:44.05,lng:65.73},{name:'Аксукент',lat:44.52,lng:65.92},
+        {name:'Айтеке-Би',lat:45.23,lng:66.87},{name:'Жанакорган',lat:43.87,lng:67.38},{name:'Сырдарья',lat:44.80,lng:67.47}
+      ],
+      akmola: [
+        {name:'Кокшетау',lat:53.2858,lng:69.3917},{name:'Степногорск',lat:52.3500,lng:71.8833},{name:'Щучинск',lat:52.9333,lng:70.1833},
+        {name:'Макинск',lat:52.6333,lng:70.4167},{name:'Атбасар',lat:51.8167,lng:68.3500},{name:'Ерейментау',lat:51.62,lng:73.10},
+        {name:'Балкашино',lat:52.82,lng:70.87},{name:'Акколь',lat:52.53,lng:70.77},{name:'Есиль',lat:51.95,lng:66.40},
+        {name:'Державинск',lat:51.08,lng:66.32},{name:'Жаркаин',lat:52.87,lng:71.58},{name:'Степняк',lat:52.35,lng:71.73},
+        {name:'Аршалы',lat:51.35,lng:69.88},{name:'Шортанды',lat:52.12,lng:70.72},{name:'Зерендинское',lat:53.07,lng:69.82}
+      ]
+    };
+
+    document.getElementById('autoGenBtn').onclick = () => {
+      document.getElementById('autoGenModal').style.display = 'flex';
+    };
+
+    document.getElementById('autoGenCancel').onclick = () => {
+      document.getElementById('autoGenModal').style.display = 'none';
+    };
+
+    // Checkbox toggle for "add all"
+    document.getElementById('autoGenAll').onchange = e => {
+      document.getElementById('countWrap').style.opacity = e.target.checked ? '0.5' : '1';
+      document.getElementById('autoGenCount').disabled = e.target.checked;
+    };
+
+    document.getElementById('autoGenStart').onclick = async () => {
+      const addAll = document.getElementById('autoGenAll').checked;
+      const count = parseInt(document.getElementById('autoGenCount').value);
+      const region = document.getElementById('autoGenRegion').value;
+      
+      if (!addAll && (isNaN(count) || count < 1)) {
+        return alert('Укажите количество или выберите "Добавить все"');
+      }
+
+      const pwd = prompt('Введите пароль для автогенерации:');
+      if (pwd !== '59872461') return alert('Неверный пароль!');
+
+      // Собираем точки для генерации
+      let places = [];
+      if (region === 'all') {
+        Object.values(kazakhstanPlaces).forEach(arr => places.push(...arr));
+      } else {
+        places = kazakhstanPlaces[region] || [];
+      }
+
+      if (places.length === 0) return alert('Нет точек для этой области');
+
+      // Перемешиваем и берем нужное количество (или все)
+      places = places.sort(() => Math.random() - 0.5);
+      if (!addAll) {
+        places = places.slice(0, Math.min(count, places.length));
+      }
+
+      // Показываем прогресс
+      document.getElementById('autoGenProgress').style.display = 'block';
+      document.getElementById('autoGenTotal').textContent = places.length;
+      document.getElementById('autoGenStart').disabled = true;
+
+      let added = 0;
+      let skipped = 0;
+
+      for (let i = 0; i < places.length; i++) {
+        const place = places[i];
+        
+        // Обновляем прогресс
+        document.getElementById('autoGenCurrent').textContent = i + 1;
+        document.getElementById('autoGenBar').style.width = `${((i + 1) / places.length) * 100}%`;
+
+        // Проверяем дубликаты
+        const exists = points.some(p => 
+          Math.abs(p.lat - place.lat) < 0.01 && 
+          Math.abs(p.lng - place.lng) < 0.01
+        );
+
+        if (exists) {
+          console.log(`⏭ Пропускаем ${place.name} - уже существует`);
+          skipped++;
+          await new Promise(r => setTimeout(r, 100));
+          continue;
+        }
+
+        try {
+          // Получаем описание из Википедии
+          let desc = '';
+          try {
+            const searches = [
+              place.name + ' село Казахстан',
+              place.name + ' город Казахстан',
+              place.name + ' Казахстан'
+            ];
+
+            for (const query of searches) {
+              const sr = await fetch(
+                `https://ru.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(query)}&format=json&origin=*&srlimit=3`
+              );
+              const sj = await sr.json();
+              const results = sj?.query?.search || [];
+
+              for (const r of results) {
+                const snippet = (r.snippet || '').toLowerCase();
+                if (snippet.includes('родился') || snippet.includes('биография')) continue;
+
+                const pr = await fetch(
+                  `https://ru.wikipedia.org/w/api.php?action=query&prop=extracts&exintro=true&explaintext=true&titles=${encodeURIComponent(r.title)}&format=json&origin=*`
+                );
+                const pg = Object.values((await pr.json())?.query?.pages || {})[0];
+                const text = (pg?.extract || '').trim();
+
+                if (text.length > 80 && (text.toLowerCase().includes('село') || text.toLowerCase().includes('город'))) {
+                  desc = text.slice(0, 300);
+                  break;
+                }
+              }
+              if (desc) break;
+            }
+          } catch (e) {
+            console.log(`⚠️ Вики не найдена для ${place.name}`);
+          }
+
+          // Добавляем точку
+          const { error } = await sb.from('markers').insert([{
+            lat: place.lat,
+            lng: place.lng,
+            name: place.name,
+            desc: desc || `${place.name} — населённый пункт в Казахстане.`
+          }]);
+
+          if (error) throw error;
+
+          console.log(`✅ Добавлено: ${place.name}`);
+          added++;
+          await new Promise(r => setTimeout(r, 500));
+
+        } catch (err) {
+          console.error(`❌ Ошибка ${place.name}:`, err);
+        }
+      }
+
+      // Обновляем карту
+      await loadPoints();
+
+      // Закрываем модал
+      document.getElementById('autoGenModal').style.display = 'none';
+      document.getElementById('autoGenProgress').style.display = 'none';
+      document.getElementById('autoGenStart').disabled = false;
+      document.getElementById('autoGenBar').style.width = '0%';
+
+      alert(`Готово!\n\nДобавлено: ${added}\nПропущено: ${skipped}`);
+    };
+
+    // ── ONLINE PRESENCE ──────────────────────────────────────────────────────
     (function() {
       try {
         const presenceKey = Math.random().toString(36).slice(2);
